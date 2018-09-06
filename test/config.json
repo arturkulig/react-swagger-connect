@@ -1,0 +1,10 @@
+{
+    "swaggers": [
+    {
+        "name": "pet" ,
+        "file": "pet.json" ,
+        "url":  "https://generator.swagger.io/api/swagger.json"
+    }
+    ],
+    "output": "output"
+}

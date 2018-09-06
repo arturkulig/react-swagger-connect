@@ -1,0 +1,10 @@
+*.tsx
+*.d.ts
+*.js
+*.js.map
+!conf.js
+!*.conf.js
+!*/**/*.tsx
+node_modules
+test/output
+conf

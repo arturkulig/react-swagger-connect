@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "esnext",
+    "lib": ["dom", "esnext"],
+    "sourceMap": false,
+    "jsx": "react",
+    "moduleResolution": "node",
+    "types": ["node", "react"],
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noImplicitAny": false,
+    "strictNullChecks": true,
+    "suppressImplicitAnyIndexErrors": true,
+    "noUnusedLocals": true,
+    "allowSyntheticDefaultImports": true,
+    "rootDir": "src/",
+    "outDir": "bin/"
+  },
+  "include": [ "src/**/*.ts" ],
+}
