@@ -71,7 +71,7 @@ export function getOperationExecutorFunction(
 
             console.log([
               '🌍 ${opName}',
-              ['HTTP', allInit.method.toUpperCase(), urlWithQuery].join(' '),
+              ['HTTP', result.status, urlWithQuery].join(' '),
               ...Array.from(result.headers.entries() || new Array<[string,string]>()).map(
                 ([header, value]) => ['\t', header,':',value].join(' ')
               ),
@@ -85,7 +85,7 @@ export function getOperationExecutorFunction(
           } catch (e) {
             console.log([
               '🌍 ${opName}',
-              ['HTTP', allInit.method.toUpperCase(), urlWithQuery].join(' '),
+              ['HTTP', result.status, urlWithQuery].join(' '),
               ...Array.from(result.headers.entries() || new Array<[string,string]>()).map(
                 ([header, value]) => ['\t', header,':',value].join(' ')
               ),
@@ -230,16 +230,22 @@ function createFetcherBody(
 }
 
 function createFormDataBody(parameters: Parameter[]): string {
-  return `
-      const body = new FormData();
+  return parameters.length > 0
+    ? `
+      const form = new FormData();
+      let formFilled = false;
       ${parameters
         .map(
           formParam => `
             if (request['${formParam.name}']) {
-              body.append('${formParam.name}', request['${formParam.name}']!)
+              formFilled = true;
+              form.append('${formParam.name}', request['${formParam.name}']!)
             }`,
         )
-        .join('\n')}`;
+        .join('\n')}
+      const body = formFilled ? form : null`
+    : `
+      const body = null;`;
 }
 
 function createURLEncodedBody(parameters: Parameter[]): string {
@@ -289,8 +295,10 @@ function createFetcherHeaders(
             }`,
       )
       .join('\r\n')}
-    headers.push([
-      'Content-Type',
-      '${getRequestMIMEType(operation)}'
-    ]);`;
+    if (body != null) {
+      headers.push([
+        'Content-Type',
+        '${getRequestMIMEType(operation)}'
+      ]);
+    }`;
 }
