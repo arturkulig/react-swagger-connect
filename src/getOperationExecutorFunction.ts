@@ -32,12 +32,22 @@ export function getOperationExecutorFunction(
         }
     }
 
+    export const ${opName} = Object.assign(${opName}Executor, { debug: false });
+
     ${(operation.description || '')
       .split('\n')
       .filter(l => !!l)
       .map(l => `// ${l}`)
       .join('\n')}
-    export function ${opName}(request: ${reqName}, userInit?: RequestInit): Promise<${OpName}Responses> {
+    function ${opName}Executor(
+      request: ${reqName},
+      userInit?:
+        { 
+          [id in Exclude<keyof RequestInit, 'headers'>]?:
+            Exclude<RequestInit[id], undefined>
+        } &
+        { headers?: string[][] }
+    ): Promise<${OpName}Responses> {
 
       ${createFetcherPath(swagger, dir, method, parameters)}
 
@@ -50,10 +60,32 @@ export function getOperationExecutorFunction(
       const urlWithQuery = ${
         hasQueryParams ? `url + '?' + query.join('&')` : 'url'
       };
-      const init = { method: '${method}', body, headers, credentials: 'include' as 'include'};
-      const allInit = userInit ? Object.assign(init, userInit) : init
 
-      console.log(
+      const init = Object.assign({
+        method: '${method}',
+        body,
+        headers,
+        credentials: 'include' as 'include'
+      }, body === undefined ? {} : { body });
+
+      const allInit =
+        userInit
+          ? Object.assign(
+            init,
+            userInit, 
+            (init.headers && init.headers.length) ||
+            (userInit.headers && userInit.headers.length)
+              ? {
+                headers: [
+                  ...(init.headers||[]),
+                  ...(userInit.headers||[]),
+                ]
+              }
+              : {}
+            )
+          : init;
+
+      ${opName}.debug && console.log(
         [
           '🌍 ${opName}',
           ['HTTP', allInit.method.toUpperCase(), urlWithQuery].join(' '),
@@ -61,7 +93,7 @@ export function getOperationExecutorFunction(
             ([header, value]) => ['\t', header,':',value].join(' ')
           ),
         ].map(l => l + '\\n').join(''),
-        allInit.body
+        allInit.body === undefined ? "[No body]" : allInit.body
       );
 
       return fetch(urlWithQuery, allInit).then(result => {
@@ -69,7 +101,7 @@ export function getOperationExecutorFunction(
           try {
             const json = JSON.parse(text);
 
-            console.log([
+            ${opName}.debug && console.log([
               '🌍 ${opName}',
               ['HTTP', result.status, urlWithQuery].join(' '),
               ...Array.from(result.headers.entries() || new Array<[string,string]>()).map(
@@ -83,7 +115,7 @@ export function getOperationExecutorFunction(
             } as ${OpName}Responses;
 
           } catch (e) {
-            console.log([
+            ${opName}.debug && console.log([
               '🌍 ${opName}',
               ['HTTP', result.status, urlWithQuery].join(' '),
               ...Array.from(result.headers.entries() || new Array<[string,string]>()).map(
@@ -196,7 +228,7 @@ function createFetcherBody(
     parameters.filter(param => param.in === 'formData').length === 0 &&
     parameters.filter(param => param.in === 'body').length === 0
   ) {
-    return 'const body = null';
+    return 'const body = undefined';
   }
 
   if (consumes.indexOf('multipart/form-data') >= 0) {
@@ -239,34 +271,42 @@ function createFormDataBody(parameters: Parameter[]): string {
           formParam => `
             if (request['${formParam.name}']) {
               formFilled = true;
-              form.append('${formParam.name}', request['${formParam.name}']!)
+              form.append('${formParam.name}', request['${formParam.name}']!);
             }`,
         )
         .join('\n')}
-      const body = formFilled ? form : null`
+      const body = formFilled ? form : undefined;`
     : `
-      const body = null;`;
+      const body = undefined;`;
 }
 
 function createURLEncodedBody(parameters: Parameter[]): string {
-  return `
-      const body = new URLSearchParams() as any as FormData // workaround TS defs;
+  return parameters.length > 0
+    ? `
+      const form = new URLSearchParams() as any as FormData // workaround TS defs;
+      let formFilled = false;
       ${parameters
         .map(
           formParam => `
             if (request['${formParam.name}']) {
-              body.append('${formParam.name}', request['${formParam.name}']!)
+              formFilled = true;
+              body.append('${formParam.name}', request['${formParam.name}']!);
             }`,
         )
-        .join('\n')}`;
+        .join('\n')}
+      const body = formFilled ? form : undefined;`
+    : `
+      const body = undefined;`;
 }
 
 function createJSONBody(parameters: Parameter[]): string {
-  return `const body = JSON.stringify(request['${parameters[0].name}'])`;
+  return `
+    const body = JSON.stringify(request['${parameters[0].name}'])`;
 }
 
 function createTextBody(parameters: Parameter[]): string {
-  return `const body = request['${parameters[0].name}']`;
+  return `
+    const body = request['${parameters[0].name}']`;
 }
 
 function createFetcherHeaders(

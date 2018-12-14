@@ -3,13 +3,16 @@ import * as path from 'path';
 import * as http from 'http';
 import * as https from 'https';
 import { Spec } from './schema';
-import { ServerConfig } from './readConfig';
+import {
+  SwaggerFileDescriptor,
+  SwaggerRemoteFileDescriptor,
+} from './readConfig';
 import { Signale } from 'signale';
 
 type Result<T> = { ok: false } | { ok: true; value: T };
 
 export async function* getSwaggerFiles(
-  configs: Iterable<ServerConfig>,
+  configs: Iterable<SwaggerFileDescriptor>,
   baseDirname: string,
   signale: Signale,
 ) {
@@ -18,7 +21,7 @@ export async function* getSwaggerFiles(
     const localFileOp = await loadFile(localFileName);
     const remoteFileOp = localFileOp.ok
       ? localFileOp
-      : await fetchFile(config.url);
+      : await fetchFile(config.remote);
     const fileContent = localFileOp.ok
       ? localFileOp.value
       : remoteFileOp.ok
@@ -34,6 +37,12 @@ export async function* getSwaggerFiles(
 
     if (!fileContent) {
       signale.scope(config.name).fatal(`swagger file is not available`);
+      if (!localFileOp.ok) {
+        signale.scope(config.name).fatal(`local file is not available`);
+      }
+      if (!remoteFileOp.ok) {
+        signale.scope(config.name).fatal(`remote file is not available`);
+      }
       process.exitCode = 1;
       continue;
     }
@@ -45,7 +54,7 @@ export async function* getSwaggerFiles(
     } catch {
       signale
         .scope(config.name)
-        .fatal(`file @ ${config.url} is not a JSON file`);
+        .fatal(`file @ ${config.remote.url} is not a JSON file`);
       process.exitCode = 1;
       continue;
     }
@@ -53,7 +62,7 @@ export async function* getSwaggerFiles(
     if (!isSpec(parsed)) {
       signale
         .scope(config.name)
-        .fatal(`file @ ${config.url} is not a swagger file`);
+        .fatal(`file @ ${config.remote.url} is not a swagger file`);
       process.exitCode = 1;
       continue;
     }
@@ -80,16 +89,43 @@ function loadFile(filename: string) {
   });
 }
 
-function fetchFile(url: string) {
+function fetchFile(remote: SwaggerRemoteFileDescriptor) {
   return new Promise<Result<string>>((resolve, reject) => {
-    const fetcher: { get: Function } =
-      url.slice(0, 5) === 'https' ? https : http;
-    if (fetcher.get == null || typeof fetcher.get !== 'function') {
-      resolve({ ok: false });
-      return;
-    }
-    fetcher
-      .get(url, res => {
+    const target = new URL(remote.url);
+    const grab = (
+      options: {
+        protocol?: string;
+        host?: string;
+        port?: number | string;
+        method?: string;
+        path?: string;
+        headers?: http.OutgoingHttpHeaders;
+      },
+      callback?: (res: http.IncomingMessage) => void,
+    ) => {
+      return target.protocol === 'https:'
+        ? https.get(options, callback)
+        : http.get(options, callback);
+    };
+    const cr = grab(
+      {
+        protocol: target.protocol,
+        host: target.host,
+        // port: target.port || (target.host === 'https:' ? 443 : 80),
+        method: 'GET',
+        path: target.pathname + target.search,
+        headers: remote.username
+          ? {
+              Authorization: [
+                'Basic',
+                Buffer.from(
+                  [remote.username, remote.password].join(':'),
+                ).toString('base64'),
+              ].join(' '),
+            }
+          : {},
+      },
+      res => {
         let result = '';
         res.on('data', chunk => {
           result += chunk;
@@ -97,8 +133,12 @@ function fetchFile(url: string) {
         res.on('end', () => {
           resolve({ ok: true, value: result });
         });
-      })
-      .on('error', err => resolve({ ok: false }));
+      },
+    );
+    cr.on('error', err => {
+      console.error({ err });
+      resolve({ ok: false });
+    });
   });
 }
 

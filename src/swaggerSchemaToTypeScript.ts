@@ -9,16 +9,41 @@ export function swaggerSchemaToTypeScript(def: Schema, dir: string): string {
     throw new Error(`${def.$ref} is unrecognized reference`);
   }
   if ('type' in def) {
-    if (def.enum instanceof Array) {
-      return def.enum.map(v => JSON.stringify(v)).join(' | ');
-    }
     if (def.type === 'boolean') {
       return 'boolean';
     }
     if (def.type === 'number' || def.type === 'integer') {
+      // if (def.enum instanceof Array) {
+      //   return def.enum
+      //     .map(v => {
+      //       if (typeof v === 'string') {
+      //         return parseFloat(v).toString();
+      //       }
+      //       if (typeof v === 'number') {
+      //         return v.toString();
+      //       }
+      //       return null;
+      //     })
+      //     .filter(<T>(item: T | null | undefined): item is T => item != null)
+      //     .join(' | ');
+      // }
       return 'number';
     }
     if (def.type === 'string') {
+      if (def.enum instanceof Array) {
+        return def.enum
+          .map(v => {
+            if (typeof v === 'string') {
+              return JSON.stringify(v);
+            }
+            if (typeof v === 'number') {
+              return JSON.stringify(v.toString());
+            }
+            return null;
+          })
+          .filter(<T>(item: T | null | undefined): item is T => item != null)
+          .join(' | ');
+      }
       return 'string';
     }
     if (def.type === 'array') {

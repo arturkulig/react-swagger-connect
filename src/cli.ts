@@ -2,7 +2,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as ts from 'typescript';
+// import * as ts from 'typescript';
 import * as prettier from 'prettier';
 import * as commander from 'commander';
 import { Signale } from 'signale';
@@ -79,36 +79,6 @@ async function saveEndpoint({ outputDir, specName, opName, file }) {
 
   await save(fileName, file, fileSignale);
   fileSignale.complete('stored');
-
-  const compiler = ts.createProgram([fileName], {
-    noEmit: true,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.NodeJs,
-  });
-  compiler.emit();
-  const diagnostics = compiler.getGlobalDiagnostics();
-  if (diagnostics.length > 0) {
-    for (const diagnostic of diagnostics) {
-      const {
-        line,
-        character,
-      } = diagnostic.file!.getLineAndCharacterOfPosition(diagnostic.start!);
-      fileSignale.error(
-        `${
-          diagnostic.source
-        }:${line},${character} ${ts.flattenDiagnosticMessageText(
-          diagnostic.messageText,
-          '\n',
-        )}`,
-      );
-    }
-    process.exitCode = 1;
-    fileSignale.fatal();
-    unlink(fileName, fileSignale);
-    return;
-  }
-
-  fileSignale.correct();
 }
 
 let lastSave = Promise.resolve();
@@ -134,17 +104,4 @@ function save(name: string, contents: string, signale: Signale) {
         );
       }),
   ));
-}
-
-function unlink(name: string, signale: Signale) {
-  return new Promise((resolve, reject) => {
-    fs.unlink(name, err => {
-      if (err) {
-        process.exitCode = 1;
-        signale.fatal(`Unable to delete ${name}`);
-        reject();
-      }
-      resolve();
-    });
-  });
 }
