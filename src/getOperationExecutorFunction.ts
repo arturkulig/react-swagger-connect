@@ -26,11 +26,6 @@ export function getOperationExecutorFunction(
     ...getOperationTypes(swagger, dir, method),
 
     `
-    declare global {
-      interface Headers {
-        entries(): Iterable<[string, string]>;
-        }
-    }
 
     export const ${opName} = Object.assign(${opName}Executor, { debug: false });
 
@@ -53,9 +48,9 @@ export function getOperationExecutorFunction(
 
       ${createFetcherQuery(swagger, dir, method, parameters)}
 
-      ${createFetcherBody(swagger, dir, method, parameters)}
-
       ${createFetcherHeaders(swagger, dir, method, parameters)}
+
+      ${createFetcherBody(swagger, dir, method, parameters)}
 
       const urlWithQuery = ${
         hasQueryParams ? `url + '?' + query.join('&')` : 'url'
@@ -211,6 +206,35 @@ function createFetcherQuery(
     : '';
 }
 
+function createFetcherHeaders(
+  swagger: Spec,
+  dir: string,
+  method: Method,
+  parameters: Parameter[],
+): string {
+  const operation = swagger.paths[dir][method];
+  if (!operation) {
+    throw new Error('createFetcherHeaders: operation is empty');
+  }
+
+  const headersParameters = parameters.filter(param => param.in === 'header');
+  return `
+    const headers = [] as string[][];
+    ${headersParameters
+      .map(
+        ({ name, required }) =>
+          required
+            ? `
+            headers.push(['${name}', request['${name}']]);`
+            : `
+            if (request['${name}'] != null) {
+              headers.push(['${name}', request['${name}']]);
+            }`,
+      )
+      .join('\r\n')}
+    `;
+}
+
 function createFetcherBody(
   swagger: Spec,
   dir: string,
@@ -222,14 +246,14 @@ function createFetcherBody(
     throw new Error('createFetcherBody: operation is empty');
   }
 
-  const consumes = getRequestMIMEType(operation);
-
   if (
     parameters.filter(param => param.in === 'formData').length === 0 &&
     parameters.filter(param => param.in === 'body').length === 0
   ) {
     return 'const body = undefined';
   }
+
+  const consumes = getRequestMIMEType(operation);
 
   if (consumes.indexOf('multipart/form-data') >= 0) {
     return createFormDataBody(
@@ -275,7 +299,13 @@ function createFormDataBody(parameters: Parameter[]): string {
             }`,
         )
         .join('\n')}
-      const body = formFilled ? form : undefined;`
+      const body = formFilled
+        ? (
+          headers.push([ 'Content-Type', 'multipart/form-data' ]),
+          form
+        )
+        : undefined;
+      `
     : `
       const body = undefined;`;
 }
@@ -294,51 +324,25 @@ function createURLEncodedBody(parameters: Parameter[]): string {
             }`,
         )
         .join('\n')}
-      const body = formFilled ? form : undefined;`
+      const body = formFilled
+        ? (
+          headers.push([ 'Content-Type', 'application/x-www-form-urlencoded' ]),
+          form
+        )
+        : undefined;
+      `
     : `
       const body = undefined;`;
 }
 
 function createJSONBody(parameters: Parameter[]): string {
   return `
+    headers.push([ 'Content-Type', 'application/json' ]);
     const body = JSON.stringify(request['${parameters[0].name}'])`;
 }
 
 function createTextBody(parameters: Parameter[]): string {
   return `
+    headers.push([ 'Content-Type', 'text/plain' ]);
     const body = request['${parameters[0].name}']`;
-}
-
-function createFetcherHeaders(
-  swagger: Spec,
-  dir: string,
-  method: Method,
-  parameters: Parameter[],
-): string {
-  const operation = swagger.paths[dir][method];
-  if (!operation) {
-    throw new Error('createFetcherHeaders: operation is empty');
-  }
-
-  const headersParameters = parameters.filter(param => param.in === 'header');
-  return `
-    const headers = [] as string[][];
-    ${headersParameters
-      .map(
-        ({ name, required }) =>
-          required
-            ? `
-            headers.push(['${name}', request['${name}']]);`
-            : `
-            if (request['${name}'] != null) {
-              headers.push(['${name}', request['${name}']]);
-            }`,
-      )
-      .join('\r\n')}
-    if (body != null) {
-      headers.push([
-        'Content-Type',
-        '${getRequestMIMEType(operation)}'
-      ]);
-    }`;
 }
